@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: yawgyamfiprem32/task-frontend:v1
+        image: yawgyamfiprem32/task-frontend:v2
         ports:
         - containerPort: 80
 ---
