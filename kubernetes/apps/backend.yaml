@@ -18,6 +18,9 @@ spec:
         image: yawgyamfiprem32/task-backend:v1
         ports:
         - containerPort: 8000
+        envFrom:
+        - secretRef:
+            name: taskapp-secrets
         livenessProbe:
           httpGet:
             path: /health
