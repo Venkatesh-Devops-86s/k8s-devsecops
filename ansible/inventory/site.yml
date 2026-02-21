@@ -1,765 +1,788 @@
------
-
-# site.yml - Main orchestration playbook for K8s DevSecOps cluster
-
-# 
-
-# Usage:
-
-# ansible-playbook -i inventory/hosts.ini site.yml
-
-# 
-
-# This playbook orchestrates the complete deployment:
-
-# 1. System preparation on all nodes
-
-# 2. Kubernetes master initialization
-
-# 3. Worker node joining
-
-# 4. Platform services installation (MetalLB, Traefik, cert-manager)
-
-# 5. Security stack (Vault, External Secrets Operator)
-
-# 6. Observability stack (Prometheus, Grafana)
-
-# 7. GitOps (ArgoCD)
-
-# 
-
-# Prerequisites:
-
-# - Terraform infrastructure deployed (terraform/ec2)
-
-# - inventory/hosts.ini populated with correct IPs
-
-# - SSH key accessible at the path specified in inventory
-
-- name: “Phase 1: System Preparation”
+---
+- name: "Phase 1: System Preparation"
   hosts: k8s_cluster
   become: yes
   tags: [system-prep, phase1]
   tasks:
-  - name: Disable swap
-    shell: |
-    swapoff -a
-    sed -i ‘/ swap / s/^/#/’ /etc/fstab
-    args:
-    warn: false
-  - name: Load required kernel modules
-    copy:
-    dest: /etc/modules-load.d/k8s.conf
-    content: |
-    overlay
-    br_netfilter
-  - name: Load modules immediately
-    shell: |
-    modprobe overlay
-    modprobe br_netfilter
-  - name: Configure sysctl for Kubernetes networking
-    copy:
-    dest: /etc/sysctl.d/k8s.conf
-    content: |
-    net.bridge.bridge-nf-call-iptables  = 1
-    net.bridge.bridge-nf-call-ip6tables = 1
-    net.ipv4.ip_forward                 = 1
-  - name: Apply sysctl settings
-    shell: sysctl –system
-  - name: Install containerd
-    apt:
-    name: containerd
-    state: present
-    update_cache: yes
-  - name: Create containerd config directory
-    file:
-    path: /etc/containerd
-    state: directory
-  - name: Generate default containerd config
-    shell: containerd config default > /etc/containerd/config.toml
-    args:
-    creates: /etc/containerd/config.toml
-  - name: Enable SystemdCgroup in containerd
-    replace:
-    path: /etc/containerd/config.toml
-    regexp: ‘SystemdCgroup = false’
-    replace: ‘SystemdCgroup = true’
-  - name: Restart and enable containerd
-    service:
-    name: containerd
-    state: restarted
-    enabled: yes
-  - name: Install Kubernetes prerequisites
-    apt:
-    name:
-    - apt-transport-https
-    - ca-certificates
-    - curl
-    - gpg
-    state: present
-    update_cache: yes
-  - name: Create keyrings directory
-    file:
-    path: /etc/apt/keyrings
-    state: directory
-    mode: ‘0755’
-  - name: Add Kubernetes GPG key
-    shell: |
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg –dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    args:
-    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-  - name: Add Kubernetes repository
-    copy:
-    dest: /etc/apt/sources.list.d/kubernetes.list
-    content: ‘deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /’
-  - name: Install Kubernetes components
-    apt:
-    name:
-    - kubelet
-    - kubeadm
-    - kubectl
-    state: present
-    update_cache: yes
-  - name: Hold Kubernetes packages at current version
-    shell: apt-mark hold kubelet kubeadm kubectl
-- name: “Phase 2: Initialize Kubernetes Master”
+    - name: Disable swap
+      shell: |
+        swapoff -a
+        sed -i 's/^\([^#]*\) swap \(.*\)$/#\1 swap \2/' /etc/fstab
+      args:
+        warn: false
+
+    - name: Load required kernel modules
+      copy:
+      dest: /etc/modules-load.d/k8s.conf
+      content: |
+        overlay
+        br_netfilter
+
+    - name: Load modules immediately
+      shell: |
+        modprobe overlay
+        modprobe br_netfilter
+
+    - name: Configure sysctl for Kubernetes networking
+      copy:
+        dest: /etc/sysctl.d/k8s.conf
+        content: |
+          net.bridge.bridge-nf-call-iptables  = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward                 = 1
+
+    - name: Apply sysctl settings
+      shell: sysctl --system
+
+    - name: Install containerd
+      apt:
+        name: containerd
+        state: present
+        update_cache: yes
+
+    - name: Create containerd config directory
+      file:
+        path: /etc/containerd
+        state: directory
+
+    - name: Generate default containerd config
+      shell: containerd config default > /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Enable SystemdCgroup in containerd
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: "SystemdCgroup = false"
+        replace: "SystemdCgroup = true"
+
+    - name: Restart and enable containerd
+      service:
+        name: containerd
+        state: restarted
+        enabled: yes
+
+    - name: Install Kubernetes prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gpg
+        state: present
+        update_cache: yes
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Add Kubernetes GPG key
+      shell: |
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg –dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        args:
+        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+    - name: Add Kubernetes repository
+      copy:
+        dest: /etc/apt/sources.list.d/kubernetes.list
+        content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /"
+
+    - name: Install Kubernetes components
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+
+    - name: Hold Kubernetes packages at current version
+      shell: apt-mark hold kubelet kubeadm kubectl
+
+# -----------------------------
+
+- name: "Phase 2: Initialize Kubernetes Master"
   hosts: masters
   become: yes
   tags: [init-master, phase2]
   tasks:
-  - name: Check if cluster is already initialized
-    stat:
-    path: /etc/kubernetes/admin.conf
-    register: kubeadm_init_check
-  - name: Initialize Kubernetes cluster
-    shell: |
-    kubeadm init   
-    –pod-network-cidr=192.168.0.0/16   
-    –apiserver-advertise-address={{ hostvars[inventory_hostname][‘ansible_host’] }}
-    when: not kubeadm_init_check.stat.exists
-    register: kubeadm_init
-  - name: Create .kube directory for ubuntu user
-    file:
-    path: /home/ubuntu/.kube
-    state: directory
-    owner: ubuntu
-    group: ubuntu
-    mode: ‘0755’
-  - name: Copy kubeconfig to ubuntu user
-    copy:
-    src: /etc/kubernetes/admin.conf
-    dest: /home/ubuntu/.kube/config
-    remote_src: yes
-    owner: ubuntu
-    group: ubuntu
-    mode: ‘0600’
-  - name: Install Calico CNI - Tigera Operator
-    become_user: ubuntu
-    shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: calico_operator
-    failed_when: calico_operator.rc != 0 and ‘already exists’ not in calico_operator.stderr
-  - name: Wait for Tigera Operator
-    pause:
-    seconds: 15
-  - name: Install Calico CNI - Custom Resources
-    become_user: ubuntu
-    shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/custom-resources.yaml
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: calico_resources
-    failed_when: calico_resources.rc != 0 and ‘already exists’ not in calico_resources.stderr
-  - name: Wait for Calico pods to be ready
-    become_user: ubuntu
-    shell: kubectl wait –for=condition=ready pod -l k8s-app=calico-node -n calico-system –timeout=300s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 30
-    register: calico_ready
-    until: calico_ready.rc == 0
-  - name: Generate join command for workers
-    shell: kubeadm token create –print-join-command
-    register: join_command
-  - name: Save join command locally
-    copy:
-    content: “{{ join_command.stdout }}”
-    dest: /tmp/join-command.sh
-    mode: ‘0755’
-  - name: Fetch join command to ansible controller
-    fetch:
-    src: /tmp/join-command.sh
-    dest: /tmp/join-command.sh
-    flat: yes
-- name: “Phase 3: Join Worker Nodes”
+    - name: Check if cluster is already initialized
+      stat:
+      path: /etc/kubernetes/admin.conf
+      register: kubeadm_init_check
+
+    - name: Initialize Kubernetes cluster
+      shell: |
+        kubeadm init   
+        –pod-network-cidr=192.168.0.0/16   
+        –apiserver-advertise-address={{ hostvars[inventory_hostname][‘ansible_host’] }}
+      when: not kubeadm_init_check.stat.exists
+      register: kubeadm_init
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Copy kubeconfig to ubuntu user
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+
+    - name: Install Calico CNI - Tigera Operator
+      become_user: ubuntu
+      shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: calico_operator
+      failed_when: calico_operator.rc != 0 and 'already exists' not in calico_operator.stderr
+
+    - name: Wait for Tigera Operator
+      pause:
+      seconds: 15
+
+    - name: Install Calico CNI - Custom Resources
+      become_user: ubuntu
+      shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/custom-resources.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: calico_resources
+      failed_when: calico_resources.rc != 0 and 'already exists' not in calico_resources.stderr
+
+    - name: Wait for Calico pods to be ready
+      become_user: ubuntu
+      shell: kubectl wait –for=condition=ready pod -l k8s-app=calico-node -n calico-system –timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+      register: calico_ready
+      until: calico_ready.rc == 0
+
+    - name: Generate join command for workers
+      shell: kubeadm token create –print-join-command
+      register: join_command
+
+    - name: Save join command locally
+      copy:
+        content: "{{ join_command.stdout }}"
+        dest: /tmp/join-command.sh
+        mode: "0755"
+
+    - name: Fetch join command to ansible controller
+      fetch:
+        src: /tmp/join-command.sh
+        dest: /tmp/join-command.sh
+        flat: yes
+
+# -----------------------------
+- name: "Phase 3: Join Worker Nodes"
   hosts: workers
   become: yes
   tags: [join-workers, phase3]
   tasks:
-  - name: Check if already joined to cluster
-    stat:
-    path: /etc/kubernetes/kubelet.conf
-    register: kubelet_conf
-  - name: Copy join command to worker
-    copy:
-    src: /tmp/join-command.sh
-    dest: /tmp/join-command.sh
-    mode: ‘0755’
-    when: not kubelet_conf.stat.exists
-  - name: Join worker to Kubernetes cluster
-    shell: /tmp/join-command.sh
-    when: not kubelet_conf.stat.exists
-  - name: Clean up join command
-    file:
-    path: /tmp/join-command.sh
-    state: absent
-- name: “Phase 4: Verify Cluster Health”
+    - name: Check if already joined to cluster
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Copy join command to worker
+      copy:
+        src: /tmp/join-command.sh
+        dest: /tmp/join-command.sh
+        mode: "0755"
+      when: not kubelet_conf.stat.exists
+
+    - name: Join worker to Kubernetes cluster
+      shell: /tmp/join-command.sh
+      when: not kubelet_conf.stat.exists
+
+    - name: Clean up join command
+      file:
+        path: /tmp/join-command.sh
+        state: absent
+
+# -----------------------------
+
+- name: "Phase 4: Verify Cluster Health"
   hosts: masters
   become_user: ubuntu
   tags: [verify, phase4]
   tasks:
-  - name: Wait for all nodes to be Ready
-    shell: |
-    kubectl wait –for=condition=Ready nodes –all –timeout=300s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 30
-  - name: Display cluster nodes
-    shell: kubectl get nodes -o wide
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: nodes_output
-  - name: Show nodes
-    debug:
-    msg: “{{ nodes_output.stdout_lines }}”
-  - name: Display cluster info
-    shell: kubectl cluster-info
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: cluster_info
-  - name: Show cluster info
-    debug:
-    msg: “{{ cluster_info.stdout_lines }}”
-- name: “Phase 5: Install Helm”
+    - name: Wait for all nodes to be Ready
+      shell: |
+        kubectl wait –for=condition=Ready nodes –all –timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+
+    - name: Display cluster nodes
+      shell: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: nodes_output
+
+    - name: Show nodes
+      debug:
+      msg: "{{ nodes_output.stdout_lines }}"
+
+    - name: Display cluster info
+      shell: kubectl cluster-info
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: cluster_info
+
+    - name: Show cluster info
+      debug:
+        msg: "{{ cluster_info.stdout_lines }}"
+
+# -----------------------------
+
+- name: "Phase 5: Install Helm"
   hosts: masters
   become: yes
   tags: [helm, phase5]
   tasks:
-  - name: Check if Helm is installed
-    stat:
-    path: /usr/local/bin/helm
-    register: helm_check
-  - name: Download Helm installer
-    get_url:
-    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-    dest: /tmp/get_helm.sh
-    mode: ‘0755’
-    when: not helm_check.stat.exists
-  - name: Install Helm
-    shell: /tmp/get_helm.sh
-    when: not helm_check.stat.exists
-  - name: Verify Helm installation
-    shell: helm version –short
-    register: helm_version
-  - name: Show Helm version
-    debug:
-    msg: “Helm installed: {{ helm_version.stdout }}”
-- name: “Phase 6: Install MetalLB”
+    - name: Check if Helm is installed
+      stat:
+        path: /usr/local/bin/helm
+      register: helm_check
+
+    - name: Download Helm installer
+      get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: "0755"
+      when: not helm_check.stat.exists
+
+    - name: Install Helm
+      shell: /tmp/get_helm.sh
+      when: not helm_check.stat.exists
+
+    - name: Verify Helm installation
+      shell: helm version --short
+      register: helm_version
+
+    - name: Show Helm version
+      debug:
+        msg: "Helm installed: {{ helm_version.stdout }}"
+
+# -----------------------------
+
+- name: "Phase 6: Install MetalLB"
   hosts: masters
   become_user: ubuntu
   tags: [metallb, phase6]
   tasks:
-  - name: Apply MetalLB manifest
-    shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Wait for MetalLB controller
-    shell: kubectl wait –for=condition=ready pod -l app=metallb,component=controller -n metallb-system –timeout=120s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 20
-  - ## name: Configure MetalLB IP Pool
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: metallb.io/v1beta1
-    kind: IPAddressPool
-    metadata:
-    name: default-pool
-    namespace: metallb-system
-    spec:
-    addresses:
-    - 10.0.1.200-10.0.1.210
-    
-    apiVersion: metallb.io/v1beta1
-    kind: L2Advertisement
-    metadata:
-    name: default
-    namespace: metallb-system
-    spec:
-    ipAddressPools:
-    - default-pool
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-- name: “Phase 7: Install Traefik Ingress Controller”
+    - name: Apply MetalLB manifest
+      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for MetalLB controller
+      shell: kubectl wait --for=condition=ready pod -l app=metallb,component=controller -n metallb-system --timeout=120s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 20
+
+    - name: Configure MetalLB IP Pool
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: metallb.io/v1beta1
+        kind: IPAddressPool
+        metadata:
+          name: default-pool
+          namespace: metallb-system
+        spec:
+          addresses:
+          - 10.0.1.200-10.0.1.210
+
+        ---
+          
+        apiVersion: metallb.io/v1beta1
+        kind: L2Advertisement
+        metadata:
+          name: default
+          namespace: metallb-system
+        spec:
+          ipAddressPools:
+          - default-pool
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+# -----------------------------
+
+- name: "Phase 7: Install Traefik Ingress Controller"
   hosts: masters
   become_user: ubuntu
   tags: [traefik, phase7]
   tasks:
-  - name: Add Traefik Helm repository
-    shell: helm repo add traefik https://traefik.github.io/charts
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Update Helm repositories
-    shell: helm repo update
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create traefik namespace
-    shell: kubectl create namespace traefik –dry-run=client -o yaml | kubectl apply -f -
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Install Traefik
-    shell: |
-    helm upgrade –install traefik traefik/traefik   
-    –namespace traefik   
-    –set service.type=LoadBalancer   
-    –set ports.web.port=80   
-    –set ports.websecure.port=443   
-    –set ports.traefik.port=8080   
-    –set ports.traefik.expose.default=true   
-    –set ports.metrics.port=9100   
-    –set ports.metrics.expose.default=true   
-    –set ingressRoute.dashboard.enabled=false   
-    –set providers.kubernetesIngress.enabled=true   
-    –set providers.kubernetesCRD.enabled=true
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Wait for Traefik to be ready
-    shell: kubectl wait –for=condition=ready pod -l app.kubernetes.io/name=traefik -n traefik –timeout=120s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Get Traefik LoadBalancer IP
-    shell: kubectl get svc traefik -n traefik -o jsonpath=’{.status.loadBalancer.ingress[0].ip}’
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: traefik_ip
-  - name: Display Traefik IP
-    debug:
-    msg: “Traefik LoadBalancer IP: {{ traefik_ip.stdout }}”
-- name: “Phase 8: Install cert-manager”
+    - name: Add Traefik Helm repository
+      shell: helm repo add traefik https://traefik.github.io/charts
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create traefik namespace
+      shell: kubectl create namespace traefik –-dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Install Traefik
+      shell: |
+        helm upgrade --install traefik traefik/traefik   
+        --namespace traefik   
+        --set service.type=LoadBalancer   
+        --set ports.web.port=80   
+        --set ports.websecure.port=443   
+        --set ports.traefik.port=8080   
+        --set ports.traefik.expose.default=true   
+        --set ports.metrics.port=9100   
+        --set ports.metrics.expose.default=true   
+        --set ingressRoute.dashboard.enabled=false   
+        --set providers.kubernetesIngress.enabled=true   
+        --set providers.kubernetesCRD.enabled=true
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for Traefik to be ready
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=traefik -n traefik --timeout=120s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+
+    - name: Get Traefik LoadBalancer IP
+      shell: kubectl get svc traefik -n traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: traefik_ip
+
+    - name: Display Traefik IP
+      debug:
+        msg: "Traefik LoadBalancer IP: {{ traefik_ip.stdout }}"
+
+#------------------------------
+
+- name: "Phase 8: Install cert-manager"
   hosts: masters
   become_user: ubuntu
   tags: [cert-manager, phase8]
   tasks:
-  - name: Apply cert-manager manifest
-    shell: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Wait for cert-manager pods
-    shell: kubectl wait –for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager –timeout=180s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 30
-- name: “Phase 9: Install HashiCorp Vault”
+    - name: Apply cert-manager manifest
+      shell: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for cert-manager pods
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=180s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+
+- name: "Phase 9: Install HashiCorp Vault"
   hosts: masters
   become_user: ubuntu
   tags: [vault, phase9]
   tasks:
-  - name: Add HashiCorp Helm repository
-    shell: helm repo add hashicorp https://helm.releases.hashicorp.com
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Update Helm repositories
-    shell: helm repo update
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create vault namespace
-    shell: kubectl create namespace vault –dry-run=client -o yaml | kubectl apply -f -
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Install Vault in dev mode
-    shell: |
-    helm upgrade –install vault hashicorp/vault   
-    –namespace vault   
-    –set “server.dev.enabled=true”   
-    –set “server.dev.devRootToken=root”   
-    –set “ui.enabled=true”   
-    –set “ui.serviceType=ClusterIP”
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Wait for Vault to be ready
-    shell: kubectl wait –for=condition=ready pod -l app.kubernetes.io/name=vault -n vault –timeout=180s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 20
-  - name: Enable KV v2 secrets engine
-    shell: kubectl exec -n vault vault-0 – vault secrets enable -path=secret kv-v2
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: kv_enable
-    failed_when: kv_enable.rc != 0 and ‘path is already in use’ not in kv_enable.stderr
-- name: “Phase 10: Install External Secrets Operator”
+    - name: Add HashiCorp Helm repository
+      shell: helm repo add hashicorp https://helm.releases.hashicorp.com
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create vault namespace
+      shell: kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Install Vault in dev mode
+      shell: |
+        helm upgrade --install vault hashicorp/vault   
+        --namespace vault   
+        --set "server.dev.enabled=true"   
+        --set "server.dev.devRootToken=root"   
+        --set "ui.enabled=true"   
+        --set "ui.serviceType=ClusterIP"
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for Vault to be ready
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=vault -n vault --timeout=180s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 20
+
+    - name: Enable KV v2 secrets engine
+      shell: kubectl exec -n vault vault-0 -- vault secrets enable -path=secret kv-v2
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: kv_enable
+      failed_when: kv_enable.rc != 0 and 'path is already in use' not in kv_enable.stderr
+
+#------------------------------
+
+- name: "Phase 10: Install External Secrets Operator"
   hosts: masters
   become_user: ubuntu
   tags: [external-secrets, phase10]
   tasks:
-  - name: Add External Secrets Helm repository
-    shell: helm repo add external-secrets https://charts.external-secrets.io
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Update Helm repositories
-    shell: helm repo update
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create external-secrets namespace
-    shell: kubectl create namespace external-secrets-system –dry-run=client -o yaml | kubectl apply -f -
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Install External Secrets Operator
-    shell: |
-    helm upgrade –install external-secrets external-secrets/external-secrets   
-    –namespace external-secrets-system   
-    –set installCRDs=true
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Wait for External Secrets Operator
-    shell: kubectl wait –for=condition=ready pod -l app.kubernetes.io/name=external-secrets -n external-secrets-system –timeout=180s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 20
-  - name: Create Vault token secret for ESO
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: v1
-    kind: Secret
-    metadata:
-    name: vault-token
-    namespace: external-secrets-system
-    type: Opaque
-    stringData:
-    token: “root”
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create ClusterSecretStore for Vault
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: external-secrets.io/v1
-    kind: ClusterSecretStore
-    metadata:
-    name: vault-backend
-    spec:
-    provider:
-    vault:
-    server: “http://vault.vault.svc.cluster.local:8200”
-    path: “secret”
-    version: “v2”
-    auth:
-    tokenSecretRef:
-    name: “vault-token”
-    namespace: “external-secrets-system”
-    key: “token”
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-- name: “Phase 11: Install Prometheus and Grafana”
+    - name: Add External Secrets Helm repository
+      shell: helm repo add external-secrets https://charts.external-secrets.io
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create external-secrets namespace
+      shell: kubectl create namespace external-secrets-system –dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Install External Secrets Operator
+      shell: |
+        helm upgrade --install external-secrets external-secrets/external-secrets   
+        --namespace external-secrets-system   
+        --set installCRDs=true
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for External Secrets Operator
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=external-secrets -n external-secrets-system --timeout=180s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 20
+
+    - name: Create Vault token secret for ESO
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: vault-token
+          namespace: external-secrets-system
+        type: Opaque
+        stringData:
+          token: "root"
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create ClusterSecretStore for Vault
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: external-secrets.io/v1
+        kind: ClusterSecretStore
+        metadata:
+          name: vault-backend
+        spec:
+          provider:
+            vault:
+            server: "http://vault.vault.svc.cluster.local:8200"
+            path: "secret"
+            version: "v2"
+            auth:
+              tokenSecretRef:
+                name: "vault-token"
+                namespace: "external-secrets-system"
+                key: "token"
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+#------------------------------
+
+- name: "Phase 11: Install Prometheus and Grafana"
   hosts: masters
   become_user: ubuntu
   tags: [monitoring, phase11]
   tasks:
-  - name: Add Prometheus Helm repository
-    shell: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Update Helm repositories
-    shell: helm repo update
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create monitoring namespace
-    shell: kubectl create namespace monitoring –dry-run=client -o yaml | kubectl apply -f -
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create Prometheus values file
-    copy:
-    dest: /tmp/prometheus-values.yaml
-    content: |
-    prometheus:
-    prometheusSpec:
-    resources:
-    requests:
-    memory: 400Mi
-    cpu: 200m
-    limits:
-    memory: 800Mi
-    cpu: 500m
-    serviceMonitorSelectorNilUsesHelmValues: false
-    grafana:
-    enabled: true
-    adminPassword: admin
-    resources:
-    requests:
-    memory: 128Mi
-    cpu: 100m
-    limits:
-    memory: 256Mi
-    cpu: 200m
-    alertmanager:
-    enabled: false
-    kubeStateMetrics:
-    enabled: true
-    nodeExporter:
-    enabled: true
-    prometheusOperator:
-    enabled: true
-    resources:
-    requests:
-    memory: 100Mi
-    cpu: 100m
-    limits:
-    memory: 200Mi
-    cpu: 200m
-  - name: Install kube-prometheus-stack
-    shell: |
-    helm upgrade –install prometheus prometheus-community/kube-prometheus-stack   
-    –namespace monitoring   
-    –values /tmp/prometheus-values.yaml   
-    –timeout 10m
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Wait for Grafana
-    shell: kubectl wait –for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring –timeout=300s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 30
-- name: “Phase 12: Install ArgoCD”
+    - name: Add Prometheus Helm repository
+      shell: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create monitoring namespace
+      shell: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create Prometheus values file
+      copy:
+        dest: /tmp/prometheus-values.yaml
+        content: |
+          prometheus:
+            prometheusSpec:
+              resources:
+                requests:
+                  memory: 400Mi
+                  cpu: 200m
+                limits:
+                  memory: 800Mi
+                  cpu: 500m
+              serviceMonitorSelectorNilUsesHelmValues: false
+          grafana:
+            enabled: true
+            adminPassword: admin
+            resources:
+              requests:
+                memory: 128Mi
+                cpu: 100m
+              limits:
+                memory: 256Mi
+                cpu: 200m
+          alertmanager:
+            enabled: false
+          kubeStateMetrics:
+            enabled: true
+          nodeExporter:
+            enabled: true
+          prometheusOperator:
+            enabled: true
+            resources:
+              requests:
+                memory: 100Mi
+                cpu: 100m
+              limits:
+                memory: 200Mi
+                cpu: 200m
+
+    - name: Install kube-prometheus-stack
+      shell: |
+        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack   
+        --namespace monitoring   
+        --values /tmp/prometheus-values.yaml   
+        --timeout 10m
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for Grafana
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+
+#------------------------------
+
+- name: "Phase 12: Install ArgoCD"
   hosts: masters
   become_user: ubuntu
   tags: [argocd, phase12]
   tasks:
-  - name: Create argocd namespace
-    shell: kubectl create namespace argocd –dry-run=client -o yaml | kubectl apply -f -
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Install ArgoCD
-    shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Wait for ArgoCD server
-    shell: kubectl wait –for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd –timeout=300s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    retries: 3
-    delay: 30
-  - name: Patch ArgoCD for insecure (HTTP) access
-    shell: |
-    kubectl patch deployment argocd-server -n argocd   
-    –type=‘json’   
-    -p=’[{“op”: “add”, “path”: “/spec/template/spec/containers/0/args/-”, “value”: “–insecure”}]’
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: argocd_patch
-    failed_when: argocd_patch.rc != 0 and ‘already patched’ not in argocd_patch.stderr
-  - name: Wait for ArgoCD rollout
-    shell: kubectl rollout status deployment/argocd-server -n argocd –timeout=120s
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Get ArgoCD admin password
-    shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=”{.data.password}” | base64 -d
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: argocd_password
-  - name: Display ArgoCD credentials
-    debug:
-    msg:
-    - “ArgoCD Username: admin”
-    - “ArgoCD Password: {{ argocd_password.stdout }}”
-- name: “Phase 13: Create Ingress Routes”
+    - name: Create argocd namespace
+      shell: kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+    - name: Install ArgoCD
+      shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for ArgoCD server
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+
+    - name: Patch ArgoCD for insecure (HTTP) access
+      shell: |
+        kubectl patch deployment argocd-server -n argocd   
+          --type='json'   
+          -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--insecure"}]'
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: argocd_patch
+      failed_when: argocd_patch.rc != 0 and 'already patched' not in argocd_patch.stderr
+
+    - name: Wait for ArgoCD rollout
+      shell: kubectl rollout status deployment/argocd-server -n argocd –timeout=120s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Get ArgoCD admin password
+      shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: argocd_password
+
+    - name: Display ArgoCD credentials
+      debug:
+        msg:
+          - "ArgoCD Username: admin"
+          - "ArgoCD Password: {{ argocd_password.stdout }}"
+
+# -----------------------------
+- name: "Phase 13 (continued): Create Grafana and Vault Ingress"
   hosts: masters
   become_user: ubuntu
   tags: [ingress, phase13]
   tasks:
-  - name: Create ArgoCD Ingress
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: networking.k8s.io/v1
-    kind: Ingress
-    metadata:
-    name: argocd-server
-    namespace: argocd
-    annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-    spec:
-    ingressClassName: traefik
-    rules:
-    - host: argocd.10.0.1.200.nip.io
-    http:
-    paths:
-    - path: /
-    pathType: Prefix
-    backend:
-    service:
-    name: argocd-server
-    port:
-    number: 80
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create Grafana Ingress
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: networking.k8s.io/v1
-    kind: Ingress
-    metadata:
-    name: grafana
-    namespace: monitoring
-    annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-    spec:
-    ingressClassName: traefik
-    rules:
-    - host: grafana.10.0.1.200.nip.io
-    http:
-    paths:
-    - path: /
-    pathType: Prefix
-    backend:
-    service:
-    name: prometheus-grafana
-    port:
-    number: 80
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create Vault Ingress
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: networking.k8s.io/v1
-    kind: Ingress
-    metadata:
-    name: vault-ui
-    namespace: vault
-    annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-    spec:
-    ingressClassName: traefik
-    rules:
-    - host: vault.10.0.1.200.nip.io
-    http:
-    paths:
-    - path: /
-    pathType: Prefix
-    backend:
-    service:
-    name: vault
-    port:
-    number: 8200
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-  - name: Create Traefik Dashboard Ingress
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: networking.k8s.io/v1
-    kind: Ingress
-    metadata:
-    name: traefik-dashboard
-    namespace: traefik
-    annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-    spec:
-    ingressClassName: traefik
-    rules:
-    - host: traefik.10.0.1.200.nip.io
-    http:
-    paths:
-    - path: /
-    pathType: Prefix
-    backend:
-    service:
-    name: traefik
-    port:
-    number: 8080
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-- name: “Phase 14: Create Traefik ServiceMonitor”
+    - name: Create Grafana Ingress
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: grafana
+          namespace: monitoring
+          annotations:
+            traefik.ingress.kubernetes.io/router.entrypoints: web
+        spec:
+          ingressClassName: traefik
+          rules:
+          - host: grafana.10.0.1.200.nip.io
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: prometheus-grafana
+                    port:
+                      number: 80
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create Vault Ingress
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: vault
+          namespace: vault
+          annotations:
+            traefik.ingress.kubernetes.io/router.entrypoints: web
+        spec:
+          ingressClassName: traefik
+          rules:
+          - host: vault.10.0.1.200.nip.io
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: vault
+                    port:
+                      number: 8200
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+# -----------------------------
+- name: "Phase 14: Create ServiceMonitor for Traefik"
   hosts: masters
   become_user: ubuntu
   tags: [servicemonitor, phase14]
   tasks:
-  - name: Create ServiceMonitor for Traefik
-    shell: |
-    cat <<EOF | kubectl apply -f -
-    apiVersion: monitoring.coreos.com/v1
-    kind: ServiceMonitor
-    metadata:
-    name: traefik
-    namespace: traefik
-    labels:
-    release: prometheus
-    spec:
-    selector:
-    matchLabels:
-    app.kubernetes.io/name: traefik
-    endpoints:
-    - port: metrics
-    interval: 15s
-    path: /metrics
-    EOF
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-- name: “Deployment Complete - Summary”
+    - name: Create ServiceMonitor for Traefik metrics
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: traefik-monitor
+          namespace: monitoring
+          labels:
+            release: prometheus
+        spec:
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+          namespaceSelector:
+            matchNames:
+              - traefik
+          endpoints:
+            - port: metrics
+              interval: 30s
+        EOF
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+# -----------------------------
+
+- name: "Deployment Complete - Summary"
   hosts: masters
   become_user: ubuntu
   tags: [summary]
   tasks:
-  - name: Get all pods
-    shell: kubectl get pods -A | grep -v “Completed”
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: all_pods
-  - name: Get all ingresses
-    shell: kubectl get ingress -A
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: all_ingresses
-  - name: Get ArgoCD password
-    shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=”{.data.password}” | base64 -d
-    environment:
-    KUBECONFIG: /home/ubuntu/.kube/config
-    register: argocd_pass
-  - name: Display deployment summary
-    debug:
-    msg:
-    - “============================================”
-    - “   K8s DevSecOps Cluster Deployment Complete”
-    - “============================================”
-    - “”
-    - “CLUSTER PODS:”
-    - “{{ all_pods.stdout_lines }}”
-    - “”
-    - “INGRESS ROUTES:”
-    - “{{ all_ingresses.stdout_lines }}”
-    - “”
-    - “ACCESS URLS (via SSH tunnel on port 80):”
-    - “  ArgoCD:  http://argocd.10.0.1.200.nip.io”
-    - “  Grafana: http://grafana.10.0.1.200.nip.io”
-    - “  Vault:   http://vault.10.0.1.200.nip.io”
-    - “  Traefik: http://traefik.10.0.1.200.nip.io/dashboard/”
-    - “”
-    - “CREDENTIALS:”
-    - “  ArgoCD:  admin / {{ argocd_pass.stdout }}”
-    - “  Grafana: admin / admin”
-    - “  Vault:   Token: root”
-    - “”
-    - “SSH TUNNEL COMMAND:”
-    - “  sudo ssh -i k8s-key.pem ubuntu@<MASTER_PUBLIC_IP> -L 80:10.0.1.200:80 -N”
-    - “”
-    - “============================================”
+    - name: Get all pods
+      shell: kubectl get pods -A | grep -v "Completed"
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: all_pods
+
+    - name: Get all ingresses
+      shell: kubectl get ingress -A
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: all_ingresses
+
+    - name: Get ArgoCD password
+      shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: argocd_pass
+
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "============================================"
+          - "   K8s DevSecOps Cluster Deployment Complete"
+          - "============================================"
+          - ""
+          - "CLUSTER PODS:"
+          - "{{ all_pods.stdout_lines }}"
+          - ""
+          - "INGRESS ROUTES:"
+          - "{{ all_ingresses.stdout_lines }}"
+          - ""
+          - "ACCESS URLS (via SSH tunnel on port 80):"
+          - "  ArgoCD:  http://argocd.10.0.1.200.nip.io"
+          - "  Grafana: http://grafana.10.0.1.200.nip.io"
+          - "  Vault:   http://vault.10.0.1.200.nip.io"
+          - "  Traefik: http://traefik.10.0.1.200.nip.io/dashboard/"
+          - ""
+          - "CREDENTIALS:"
+          - "  ArgoCD:  admin / {{ argocd_pass.stdout }}"
+          - "  Grafana: admin / admin"
+          - "  Vault:   Token: root"
+          - ""
+          - "SSH TUNNEL COMMAND:"
+          - "  ssh -i k8s-key.pem ubuntu@<MASTER_PUBLIC_IP> -L 80:10.0.1.200:80 -N"
+          - ""
