@@ -43,4 +43,5 @@ variable "availability_zone" {
 variable "admin_ip" {
   description = "Admin IP address for SSH access (CIDR format)"
   type        = string
+  default     = "103.168.80.78/32"
 }
