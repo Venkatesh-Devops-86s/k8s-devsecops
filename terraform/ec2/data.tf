@@ -3,7 +3,7 @@ data "terraform_remote_state" "vpc" {
   config = {
     bucket = "k8s-devsecops-tfstate-bucket"
     key    = "vpc/terraform.tfstate"
-    region = "eu-west-1"
+    region = "us-east-1"
   }
 }
 

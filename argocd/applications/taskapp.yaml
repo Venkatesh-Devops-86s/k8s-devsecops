@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/NanaGyamfiPrempeh30/k8s-devsecops.git
+    repoURL: https://github.com/Venkatesh-Devops-86s/k8s-devsecops.git
     targetRevision: main
     path: kubernetes/apps
   destination:
