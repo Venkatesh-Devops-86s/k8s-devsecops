@@ -64,13 +64,16 @@
         state: restarted
         enabled: yes
 
-    - name: Install Kubernetes prerequisites
+        - name: Install Kubernetes required system packages
       apt:
         name:
           - apt-transport-https
           - ca-certificates
           - curl
           - gpg
+          - conntrack
+          - iptables
+          - socat
         state: present
         update_cache: yes
 
