@@ -138,7 +138,7 @@ k8s-devsecops/
 
 ```bash
 # Initialize and apply Terraform
-cd terraform/ec2
+cd terraform/backend/../vpc/../ec2
 terraform init
 terraform plan
 terraform apply

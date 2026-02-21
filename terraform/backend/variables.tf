@@ -7,13 +7,13 @@ variable "aws_region" {
 variable "state_bucket_name" {
   description = "S3 bucket name for Terraform state"
   type        = string
-  default     = "k8s-devsecops-tfstate-bucket"
+  default     = "venkatesh-devsecops-tfstate-bucket"
 }
 
 variable "dynamodb_table_name" {
   description = "DynamoDB table name for state locking"
   type        = string
-  default     = "k8s-devsecops-tfstate-lock"
+  default     = "venkatesh-devsecops-tfstate-lock"
 }
 
 variable "environment" {
