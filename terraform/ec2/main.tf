@@ -77,7 +77,7 @@ resource "aws_instance" "master" {
   }
 }
 
-# Worker Node 1 (t2.micro - 1GB RAM)
+# Worker Node 1 (t3.micro - 1GB RAM)
 resource "aws_instance" "worker1" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.worker_instance_type
@@ -110,7 +110,7 @@ resource "aws_instance" "worker1" {
   }
 }
 
-# Worker Node 2 (t2.micro - 1GB RAM)
+# Worker Node 2 (t3.micro - 1GB RAM)
 resource "aws_instance" "worker2" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.worker_instance_type

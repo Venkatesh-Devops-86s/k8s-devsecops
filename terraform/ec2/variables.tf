@@ -31,5 +31,5 @@ variable "master_instance_type" {
 variable "worker_instance_type" {
   description = "Worker node instance type"
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
