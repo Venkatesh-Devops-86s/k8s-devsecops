@@ -110,7 +110,7 @@
   tasks:
     - name: Check if cluster is already initialized
       stat:
-      path: /etc/kubernetes/admin.conf
+        path: /etc/kubernetes/admin.conf
       register: kubeadm_init_check
 
     - name: Initialize Kubernetes cluster
@@ -234,7 +234,7 @@
 
     - name: Show nodes
       debug:
-      msg: "{{ nodes_output.stdout_lines }}"
+        msg: "{{ nodes_output.stdout_lines }}"
 
     - name: Display cluster info
       shell: kubectl cluster-info
