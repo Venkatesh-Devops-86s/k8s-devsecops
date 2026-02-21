@@ -13,10 +13,10 @@
 
     - name: Load required kernel modules
       copy:
-      dest: /etc/modules-load.d/k8s.conf
-      content: |
-        overlay
-        br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
 
     - name: Load modules immediately
       shell: |
