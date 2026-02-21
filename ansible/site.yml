@@ -64,7 +64,7 @@
         state: restarted
         enabled: yes
 
-        - name: Install Kubernetes required system packages
+    - name: Install Kubernetes required system packages
       apt:
         name:
           - apt-transport-https
