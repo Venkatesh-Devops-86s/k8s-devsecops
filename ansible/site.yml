@@ -82,10 +82,10 @@
 
     - name: Add Kubernetes GPG key
       shell: |
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg –dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-        args:
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key \
+        | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      args:
         creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
     - name: Add Kubernetes repository
       copy:
         dest: /etc/apt/sources.list.d/kubernetes.list
