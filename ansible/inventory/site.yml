@@ -148,7 +148,7 @@
 
     - name: Wait for Tigera Operator
       pause:
-      seconds: 15
+        seconds: 15
 
     - name: Install Calico CNI - Custom Resources
       become_user: ubuntu
