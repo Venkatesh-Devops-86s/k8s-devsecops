@@ -4,12 +4,14 @@
   become: yes
   tags: [system-prep, phase1]
   tasks:
-    - name: Disable swap
-      shell: |
-        swapoff -a
-        sed -i 's/^\([^#]*\) swap \(.*\)$/#\1 swap \2/' /etc/fstab
-      args:
-        warn: false
+    - name: Disable swap immediately
+      ansible.builtin.command: swapoff -a
+
+    - name: Remove swap from fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: "^.*swap.*$"
+        replace: ""
 
     - name: Load required kernel modules
       copy:
